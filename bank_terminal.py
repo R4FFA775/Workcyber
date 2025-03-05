@@ -2,6 +2,8 @@ import json
 import hashlib
 import re
 import random
+from bank_email import enviar_notificacao_transacao
+from datetime import datetime
 
 def gerar_numero_conta(contas):
     while True:
@@ -17,26 +19,74 @@ def verificar_senha(senha_digitada, senha_criptografada):
     return criptografar_senha(senha_digitada) == senha_criptografada
 
 def validar_cpf(cpf):
-    padrao = r"^\d{3}\.\d{3}\.\d{3}-\d{2}$"
-    return re.match(padrao, cpf) is not None
+    # Remove caracteres não numéricos
+    cpf = ''.join(filter(str.isdigit, cpf))
+    
+    # Verifica se tem 11 dígitos
+    if len(cpf) != 11:
+        return False
+    
+    # Verifica se todos os dígitos são iguais
+    if len(set(cpf)) == 1:
+        return False
+        
+    # Calcula primeiro dígito verificador
+    soma = 0
+    for i in range(9):
+        soma += int(cpf[i]) * (10 - i)
+    digito1 = 11 - (soma % 11)
+    if digito1 > 9:
+        digito1 = 0
+        
+    # Calcula segundo dígito verificador
+    soma = 0
+    for i in range(10):
+        soma += int(cpf[i]) * (11 - i)
+    digito2 = 11 - (soma % 11)
+    if digito2 > 9:
+        digito2 = 0
+        
+    # Verifica se os dígitos calculados são iguais aos dígitos informados
+    return cpf[-2:] == f"{digito1}{digito2}"
 
 def validar_email(email):
     padrao = r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$"
     return re.match(padrao, email) is not None
 
+def formatar_cpf(cpf):
+    cpf = ''.join(filter(str.isdigit, cpf))
+    return f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}"
+
 def cadastrar_conta(contas):
     print("Cadastrando conta...")
     if input("Deseja continuar? (s/n): ").lower() != 's':
         return contas
+    
     nome = input("Digite seu nome (ou 'voltar' para retornar ao menu): ")
     if nome.lower() == 'voltar':
         return contas
-    cpf = input("Digite seu CPF (ou 'voltar' para retornar ao menu): ")
+        
+    cpf = input("Digite seu CPF (apenas números ou com pontuação): ")
     if cpf.lower() == 'voltar':
         return contas
+    if not validar_cpf(cpf):
+        print("CPF inválido! Por favor, digite um CPF válido.")
+        return contas
+    cpf_formatado = formatar_cpf(cpf)
+    
+    # Verificar se CPF já existe
+    for conta in contas.values():
+        if conta['cpf'] == cpf_formatado:
+            print("CPF já cadastrado no sistema!")
+            return contas
+            
     email = input("Digite seu e-mail (ou 'voltar' para retornar ao menu): ")
     if email.lower() == 'voltar':
         return contas
+    if not validar_email(email):
+        print("Email inválido! Por favor, digite um email válido.")
+        return contas
+        
     senha = input("Digite sua senha (ou 'voltar' para retornar ao menu): ")
     if senha.lower() == 'voltar':
         return contas
@@ -46,7 +96,7 @@ def cadastrar_conta(contas):
     
     conta = {
         "nome": nome,
-        "cpf": cpf,
+        "cpf": cpf_formatado,  # Usando o CPF formatado
         "email": email,
         "senha": criptografar_senha(senha),
         "saldo": saldo,
@@ -116,7 +166,9 @@ def depositar(contas):
             return contas
         valor = float(input("Digite o valor a ser depositado (ou 'voltar' para retornar ao menu): "))
         contas[numero_conta]["saldo"] += valor
-        contas[numero_conta]["movimentacoes"].append(f"Depósito: +{valor}")
+        transacao = f"Depósito realizado: R$ +{valor:.2f}\nSaldo atual: R$ {contas[numero_conta]['saldo']:.2f}"
+        contas[numero_conta]["movimentacoes"].append(transacao)
+        enviar_notificacao_transacao(transacao, contas[numero_conta]["email"])
     else:
         print("Conta não encontrada.")
     return contas
@@ -138,7 +190,9 @@ def sacar(contas):
         valor = float(input("Digite o valor a ser sacado (ou 'voltar' para retornar ao menu): "))
         if valor <= contas[numero_conta]["saldo"]:
             contas[numero_conta]["saldo"] -= valor
-            contas[numero_conta]["movimentacoes"].append(f"Saque: -{valor}")
+            transacao = f"Saque realizado: R$ -{valor:.2f}\nSaldo atual: R$ {contas[numero_conta]['saldo']:.2f}"
+            contas[numero_conta]["movimentacoes"].append(transacao)
+            enviar_notificacao_transacao(transacao, contas[numero_conta]["email"])
         else:
             print("Saldo insuficiente.")
     else:
@@ -169,8 +223,28 @@ def transferir(contas):
             if valor <= contas[numero_origem]["saldo"]:
                 contas[numero_origem]["saldo"] -= valor
                 contas[numero_destino]["saldo"] += valor
-                contas[numero_origem]["movimentacoes"].append(f"Transferência para {contas[numero_destino]['nome']}: -{valor}")
-                contas[numero_destino]["movimentacoes"].append(f"Transferência de {contas[numero_origem]['nome']}: +{valor}")
+                
+                # Notificação para quem enviou
+                transacao_origem = f"""
+                Transferência realizada:
+                Destinatário: {contas[numero_destino]['nome']}
+                Valor: R$ -{valor:.2f}
+                Saldo atual: R$ {contas[numero_origem]['saldo']:.2f}
+                """
+                
+                # Notificação para quem recebeu
+                transacao_destino = f"""
+                Transferência recebida:
+                Remetente: {contas[numero_origem]['nome']}
+                Valor: R$ +{valor:.2f}
+                Saldo atual: R$ {contas[numero_destino]['saldo']:.2f}
+                """
+                
+                contas[numero_origem]["movimentacoes"].append(transacao_origem)
+                contas[numero_destino]["movimentacoes"].append(transacao_destino)
+                
+                enviar_notificacao_transacao(transacao_origem, contas[numero_origem]["email"])
+                enviar_notificacao_transacao(transacao_destino, contas[numero_destino]["email"])
             else:
                 print("Saldo insuficiente.")
     else:
@@ -182,7 +256,7 @@ def exibir_conta(contas):
     if numero_conta.lower() == 'voltar':
         return
     if numero_conta in contas:
-        # Não precisa de senha pois mostra apenas informações públicas
+        
         print("\n=== Informações Básicas da Conta ===")
         print(f"Nome: {contas[numero_conta]['nome']}")
         print(f"Número da Conta: {numero_conta}")

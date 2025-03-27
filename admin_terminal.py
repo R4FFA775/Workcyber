@@ -1,32 +1,26 @@
-import json
+from SQL_lite import BankDatabase
 from bank_email import enviar_extrato_mensal, enviar_alerta_transacao
 
-def carregar_dados():
-    try:
-        with open("dados_bancarios.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
+db = BankDatabase()
 
 def visualizar_todas_contas():
-    contas = carregar_dados()
+    contas = db.get_all_contas()
     print("\n=== Lista de Todas as Contas ===")
-    for numero, conta in contas.items():
-        print(f"\nConta: {numero}")
-        print(f"Nome: {conta['nome']}")
-        print(f"CPF: {conta['cpf']}")
-        print(f"Saldo: R$ {conta['saldo']:.2f}")
+    for conta in contas:
+        print(f"\nConta: {conta[0]}")
+        print(f"Nome: {conta[1]}")
+        print(f"CPF: {conta[2]}")
+        print(f"Email: {conta[3]}")
+        print(f"Saldo: R$ {conta[5]:.2f}")
         print("------------------------")
 
 def visualizar_movimentacoes():
-    contas = carregar_dados()
-    total_movimentacoes = 0
+    movimentacoes = db.get_all_movimentacoes()
+    total_movimentacoes = len(movimentacoes)
     print("\n=== Movimentações de Todas as Contas ===")
-    for numero, conta in contas.items():
-        print(f"\nConta {numero} - {conta['nome']}:")
-        for mov in conta['movimentacoes']:
-            print(f"- {mov}")
-            total_movimentacoes += 1
+    for mov in movimentacoes:
+        print(f"Conta {mov[1]} - {mov[5]}:")
+        print(f"- {mov[2]}: R$ {mov[3]:.2f} - {mov[4]}")
     print(f"\nTotal de movimentações: {total_movimentacoes}")
 
 def menu_gestor():

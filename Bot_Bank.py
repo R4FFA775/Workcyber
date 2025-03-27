@@ -1,31 +1,12 @@
-import json
+from SQL_lite import BankDatabase
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
 from bank_email import enviar_extrato_mensal, enviar_alerta_transacao, enviar_boleto_vencimento, enviar_extrato_pdf
 
-TOKEN = "7634990494:AAHy3rSfCcQo6lQ8zoyg50x3JP-mOTbzyKc"  # Troque pelo novo token gerado!
-
-# Função para carregar os dados do banco
-def carregar_dados():
-    try:
-        with open("dados_bancarios.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-# Função para salvar os dados do banco
-def salvar_dados(contas):
-    with open("dados_bancarios.json", "w", encoding="utf-8") as f:
-        json.dump(contas, f, indent=4, ensure_ascii=False)
+TOKEN = "7927020967:AAH98kEI69H9JENuVNFDEjpCULV0yscAtSc"
+db = BankDatabase()
 
 # Função para consultar o saldo da conta
-def consultar_saldo(numero_conta):
-    contas = carregar_dados()
-    if numero_conta in contas:
-        return f"Saldo da conta {numero_conta}: R$ {contas[numero_conta].get('saldo', 0.00):.2f}"
-    return "Conta não encontrada."
-
-# Comando /saldo
 async def saldo(update: Update, context: CallbackContext):
     args = update.message.text.split()
     if len(args) < 2:
@@ -33,8 +14,11 @@ async def saldo(update: Update, context: CallbackContext):
         return
 
     numero_conta = args[1]
-    resposta = consultar_saldo(numero_conta)
-    await update.message.reply_text(resposta)
+    saldo = db.get_saldo(numero_conta)
+    if saldo is not None:
+        await update.message.reply_text(f"Saldo da conta {numero_conta}: R$ {saldo:.2f}")
+    else:
+        await update.message.reply_text("Conta não encontrada.")
 
 # Comando /extrato
 async def extrato(update: Update, context: CallbackContext):
@@ -44,14 +28,12 @@ async def extrato(update: Update, context: CallbackContext):
         return
 
     numero_conta = args[1]
-    contas = carregar_dados()
-
-    if numero_conta in contas:
-        movimentacoes = contas[numero_conta].get("movimentacoes", [])
-        extrato_texto = "\n".join(movimentacoes) if movimentacoes else "Nenhuma movimentação registrada."
+    movimentacoes = db.get_movimentacoes(numero_conta)
+    if movimentacoes:
+        extrato_texto = "\n".join([f"{m[0]}: R$ {m[1]:.2f} - {m[3]} ({m[2]})" for m in movimentacoes])
         await update.message.reply_text(f"Extrato da conta {numero_conta}:\n{extrato_texto}")
     else:
-        await update.message.reply_text("Conta não encontrada.")
+        await update.message.reply_text("Conta não encontrada ou sem movimentações.")
 
 # Comando /enviar_extrato
 async def enviar_extrato(update: Update, context: CallbackContext):
@@ -61,15 +43,13 @@ async def enviar_extrato(update: Update, context: CallbackContext):
         return
 
     numero_conta = args[1]
-    contas = carregar_dados()
-
-    if numero_conta in contas:
-        movimentacoes = contas[numero_conta].get("movimentacoes", [])
-        extrato_texto = "\n".join(movimentacoes) if movimentacoes else "Nenhuma movimentação registrada."
+    movimentacoes = db.get_movimentacoes(numero_conta)
+    if movimentacoes:
+        extrato_texto = "\n".join([f"{m[0]}: R$ {m[1]:.2f} - {m[3]} ({m[2]})" for m in movimentacoes])
         resultado = enviar_extrato_mensal(extrato_texto)
         await update.message.reply_text(resultado)
     else:
-        await update.message.reply_text("Conta não encontrada.")
+        await update.message.reply_text("Conta não encontrada ou sem movimentações.")
 
 # Comando /alerta_transacao
 async def alerta_transacao(update: Update, context: CallbackContext):
@@ -112,15 +92,13 @@ async def enviar_extrato_pdf_command(update: Update, context: CallbackContext):
         return
 
     numero_conta = args[1]
-    contas = carregar_dados()
-
-    if numero_conta in contas:
-        movimentacoes = contas[numero_conta].get("movimentacoes", [])
-        extrato_texto = "\n".join(movimentacoes) if movimentacoes else "Nenhuma movimentação registrada."
+    movimentacoes = db.get_movimentacoes(numero_conta)
+    if movimentacoes:
+        extrato_texto = "\n".join([f"{m[0]}: R$ {m[1]:.2f} - {m[3]} ({m[2]})" for m in movimentacoes])
         resultado = enviar_extrato_pdf(extrato_texto)
         await update.message.reply_text(resultado)
     else:
-        await update.message.reply_text("Conta não encontrada.")
+        await update.message.reply_text("Conta não encontrada ou sem movimentações.")
 
 # Comando /help
 async def help_command(update: Update, context: CallbackContext):
